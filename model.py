@@ -14,10 +14,11 @@ import time
 # We use the value of the previous hidden state to initialize but detach from the history to make it trainable
 def repackage_hidden(h):
     """Wraps hidden states in new Variables, to detach them from their history."""
-    if type(h) == autograd.Variable:
-        return autograd.Variable(h.data)
-    else:
+    if isinstance(h, tuple) or isinstance(h, list):
         return tuple(repackage_hidden(v) for v in h)
+    else:
+        return h.detach()
+
 
 # 28.08.2017
 # "char-ngram", "morpheme" or "oracle" (morphological analysis)
@@ -100,7 +101,7 @@ class AdditiveModel(nn.Module):
         lstm_out = lstm_out.contiguous()
         lstm_out = self.dropout(lstm_out)
         wordvec_space = self.hidden2word(lstm_out.view(-1,lstm_out.size(2)))
-        word_scores = F.log_softmax(wordvec_space)
+        word_scores = F.log_softmax(wordvec_space, dim=0)
         return word_scores
 
 # 03.09.2017
@@ -143,7 +144,7 @@ class WordModel(nn.Module):
         self.init_weights(args.param_init_type, args.init_scale)
         self.init_forget_gates(value=0.)
 
-    def init_hidden(self, numlayer, numdirec=1):
+    def init_hidden(self, numlayer, numdirec=1, batchsize=32):
         result = (
         autograd.Variable(torch.zeros(numlayer * numdirec, self.batch_size, self.rnn_size).type(self.dtype)),
         autograd.Variable(torch.zeros(numlayer * numdirec, self.batch_size, self.rnn_size).type(self.dtype)))
@@ -180,7 +181,7 @@ class WordModel(nn.Module):
         lstm_out = lstm_out.contiguous()
         lstm_out = self.dropout(lstm_out)
         wordvec_space = self.hidden2word(lstm_out.view(-1, lstm_out.size(2)))
-        word_scores = F.log_softmax(wordvec_space)
+        word_scores = F.log_softmax(wordvec_space, dim=0)
         return word_scores
 
 # 01.09.2017 - 03.09.2017
@@ -294,7 +295,7 @@ class BiLSTMModel(nn.Module):
         lstm_out = lstm_out.contiguous()
         lstm_out = self.dropout(lstm_out)
         wordvec_space = self.hidden2word(lstm_out.view(-1,lstm_out.size(2)))
-        word_scores = F.log_softmax(wordvec_space)
+        word_scores = F.log_softmax(wordvec_space, dim=0)
         return word_scores
 
 # 04.09.2017
@@ -402,5 +403,5 @@ class AddBiLSTMModel(nn.Module):
         lstm_out = lstm_out.contiguous()
         lstm_out = self.dropout(lstm_out)
         wordvec_space = self.hidden2word(lstm_out.view(-1,lstm_out.size(2)))
-        word_scores = F.log_softmax(wordvec_space)
+        word_scores = F.log_softmax(wordvec_space, dim=0)
         return word_scores

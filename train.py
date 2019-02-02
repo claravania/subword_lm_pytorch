@@ -31,9 +31,9 @@ def main():
                         help='number of layers in the RNN')
     parser.add_argument('--model', type=str, default='lstm',
                         help='rnn, gru, or lstm')
-    parser.add_argument('--unit', type=str, default='char-ngram',
+    parser.add_argument('--unit', type=str, default='word',
                         help='char, char-ngram, morpheme, word, oracle or oracle-db')
-    parser.add_argument('--composition', type=str, default='addition',
+    parser.add_argument('--composition', type=str, default='none',
                         help='none(word), addition, or bi-lstm')
     parser.add_argument('--lowercase', dest='lowercase', action='store_true',
                         help='lowercase data', default=False)
@@ -60,7 +60,7 @@ def main():
                         help='initial learning rate')
     parser.add_argument('--decay_rate', type=float, default=0.5,
                         help='the decay of the learning rate')
-    parser.add_argument('--keep_prob', type=float, default=0.5,
+    parser.add_argument('--keep_prob', type=float, default=0.8,
                         help='the probability of keeping weights in the dropout layer')
     parser.add_argument('--gpu', type=int, default=0,
                         help='the gpu id, if have more than one gpu')
@@ -98,7 +98,7 @@ def main():
 
 def lossCriterion(vocabSize):
     weight = torch.ones(vocabSize)
-    crit = nn.NLLLoss(weight, size_average=False)
+    crit = nn.NLLLoss(weight, reduction='sum')
     return crit
 
 def run_epoch(m, data, data_loader, optimizer, eval=False):
@@ -106,16 +106,19 @@ def run_epoch(m, data, data_loader, optimizer, eval=False):
         m.eval()
     else:
         m.train()
+
     epoch_size = ((len(data) // m.batch_size) - 1) // m.num_steps
     start_time = time.time()
     costs = 0.0
     iters = 0
+
     crit = lossCriterion(data_loader.out_vocab_size)
-    m.lm_hidden = m.init_hidden(m.num_layers,numdirec=1, batchsize=m.batch_size)
+    m.lm_hidden = m.init_hidden(m.num_layers, numdirec=1, batchsize=m.batch_size)
     if data_loader.composition == "bi-lstm" or data_loader.composition == "add-bi-lstm":
         m.comp_hidden = m.init_hidden(1, numdirec=2, batchsize=(m.batch_size*m.num_steps))
 
     for step, (x, y) in enumerate(data_loader.data_iterator(data, m.batch_size, m.num_steps)):
+        
         # make them matrix
         # x can be values, x can be indices
         if (data_loader.composition=="bi-lstm") or \
@@ -124,25 +127,29 @@ def run_epoch(m, data, data_loader, optimizer, eval=False):
         elif data_loader.composition=="addition" or \
                 (data_loader.composition == "add-bi-lstm"): # values are returned
             x = torch.FloatTensor(x).type(m.dtype)
+        
         # y is always indices
         y = torch.LongTensor(y).type(m.otype)
+        
         # move input tensors to gpu if possible
         if m.use_cuda:
             x = x.cuda()
             y = y.cuda()
             crit = crit.cuda()
+        
         # require_grad by default false
-        x_var = Variable(x, volatile=eval)
-        y_var = Variable(y, volatile=eval)
+        x_var, y_var = x, y
+
         # zero the gradients
         m.zero_grad()
+
         m.lm_hidden = repackage_hidden(m.lm_hidden)
         if data_loader.composition=="bi-lstm" or data_loader.composition=="add-bi-lstm":
             m.comp_hidden = repackage_hidden(m.comp_hidden)
         log_probs = m(x_var)
         training_labels = y_var.view(log_probs.size(0))
         loss = crit(log_probs, training_labels).div(m.batch_size)
-        costs += loss.data[0]
+        costs += loss.item()
         iters += m.num_steps
         if not eval:
             # go backwards and update weights

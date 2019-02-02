@@ -18,7 +18,7 @@ def main():
 
 def lossCriterion(vocabSize):
     weight = torch.ones(vocabSize)
-    crit = nn.NLLLoss(weight, size_average=False)
+    crit = nn.NLLLoss(weight, reduction='sum')
     return crit
 
 def run_epoch(m, data, data_loader, eval=True):
@@ -30,22 +30,25 @@ def run_epoch(m, data, data_loader, eval=True):
     for step, (x, y) in enumerate(data_loader.data_iterator(data, m.batch_size, m.num_steps)):
         x = torch.FloatTensor(x).type(m.dtype)
         y = torch.LongTensor(y).type(m.otype)
+        
         # move input tensors to gpu if possible
         if m.use_cuda:
             x = x.cuda()
             y = y.cuda()
             crit = crit.cuda()
+
         # require_grad by default false
-        x_var = Variable(x, volatile=eval)
-        y_var = Variable(y, volatile=eval)
+        x_var, y_var = x, y
+
         # zero the gradients
         m.zero_grad()
+        
         # delete hidden state history
         m.lm_hidden = repackage_hidden(m.lm_hidden)
         log_probs = m(x_var)
         training_labels = y_var.view(log_probs.size(0))
         loss = crit(log_probs, training_labels).div(m.batch_size)
-        costs += loss.data[0]
+        costs += loss.item()
         iters += m.num_steps
     cost_norm = (costs/iters)
     ppl = math.exp(min(cost_norm, 100.0))
